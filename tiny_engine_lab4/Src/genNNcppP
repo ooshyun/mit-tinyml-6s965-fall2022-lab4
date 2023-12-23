@@ -1,0 +1,718 @@
+#include "tensorflow/lite/c/builtin_op_data.h"
+#include "tensorflow/lite/c/common.h"
+#include "tensorflow/lite/kernels/internal/common.h"
+#include "tensorflow/lite/kernels/internal/quantization_util.h"
+#include "tensorflow/lite/kernels/internal/reference/integer_ops/fully_connected.h"
+#include "tensorflow/lite/kernels/internal/tensor_ctypes.h"
+#include "tensorflow/lite/kernels/kernel_util.h"
+
+#include "arm_nnfunctions.h"
+#include "scratch_buffer.h"
+#include "tensorflow/lite/kernels/internal/reference/integer_ops/add.h"
+#include "tensorflow/lite/kernels/internal/reference/integer_ops/softmax.h"
+#include "tensorflow/lite/kernels/internal/reference/integer_ops/fully_connected.h"
+#include "tensorflow/lite/kernels/internal/reference/integer_ops/pooling.h"
+#include "tensorflow/lite/kernels/internal/reference/pad.h"
+
+#include "genNN.h"
+#include "genModel.h"
+
+using namespace tflite;
+using namespace tflite::reference_ops;
+using namespace tflite::reference_integer_ops;
+/* Variables for each op's parameters */
+PadParams pad_op_params __attribute__((section(".dtcmvars.pad_op_params")));
+signed char pad_value __attribute__((section(".dtcmvars.pad_value")));
+tflite::ArithmeticParams add_op_params __attribute__((section(".dtcmvars.add_op_params")));
+PoolParams pool_op_params __attribute__((section(".dtcmvars.pool_op_params")));
+tflite::FullyConnectedParams FC_op_params __attribute__((section(".dtcmvars.FC_op_params")));
+tflite::SoftmaxParams soft_op_params __attribute__((section(".dtcmvars.soft_op_params")));
+
+/* Variables used by all ops */
+RuntimeShape input_shape __attribute__((section(".dtcmvars.input_shape")));
+RuntimeShape output_shape __attribute__((section(".dtcmvars.output_shape")));
+RuntimeShape filter_shape __attribute__((section(".dtcmvars.filter_shape")));
+RuntimeShape bias_shape __attribute__((section(".dtcmvars.bias_shape")));
+RuntimeShape shape __attribute__((section(".dtcmvars.shape")));
+int32 *ptr __attribute__((section(".dtcmvars.ptr")));
+
+#define RGBHeight 64
+#define RGBWidth 64
+#define CH 3
+/*
+ *  set the input image as one of our test images
+ * */
+void setRGBTestImage() {
+	//right now only 1 image
+	uint32_t pixels = RGBHeight * RGBWidth, input_index = 0;
+	const uint8_t *index = person_pixels; //person_map;
+	for (uint32_t i = 0; i < pixels; i++) {
+		buffer0[input_index++] = static_cast<uint8_t>(*index++);
+		buffer0[input_index++] = static_cast<uint8_t>(*index++);
+		buffer0[input_index++] = static_cast<uint8_t>(*index++);
+	}
+}
+
+void getResult(uint8_t *P, uint8_t *NP) {
+	*P = NNoutput[0];
+	*NP = NNoutput[1];
+}
+
+void setupBuffer() {
+}
+
+signed char *getInput(){
+	return &buffer0[0];
+}
+
+void invoke() {
+//Node PAD number 0
+//Node CONV_2D number 1
+	arm_convolve_s8_kernel3_inputch3_stride2_pad1(tensor0, 64, 64, 3, 1,
+			(const q7_t*) weight0, 8, 3, 3, 0, 0, 2, 2, (int32*) bias0, tensor1,
+			output_shift0, output_multiplier0, -128, 1, -128, 127, 32, 32, sbuf,
+			-1);
+//Node PAD number 2
+//Node CONV_2D number 3
+	arm_convolve_1x1_s8_fast(tensor2, 32, 32, 8, 1, (const q7_t*) weight1, 12,
+			0, 0, 1, 1, (int32*) bias1, tensor3, output_shift1,
+			output_multiplier1, -128, 128, -128, 127, 32, 32, sbuf);
+//Node PAD number 4
+//Node DEPTHWISE_CONV_2D number 5
+	arm_depthwise_conv_s8_opt_kernel3_stride2_pad1(tensor4, 32, 32, 12,
+			(const q7_t*) weight2, 12, 3, 3, 0, 0, 2, 2, (int32*) bias2,
+			tensor5, Doutput_shift0, Doutput_multiplier0, 16, 16, -128, 128,
+			-128, 127, 1, 1, sbuf, -128);
+//Node PAD number 6
+//Node CONV_2D number 7
+	arm_convolve_1x1_s8_fast(tensor6, 16, 16, 12, 1, (const q7_t*) weight3, 8,
+			0, 0, 1, 1, (int32*) bias3, tensor7, output_shift2,
+			output_multiplier2, 2, 128, -128, 127, 16, 16, sbuf);
+//Node PAD number 8
+//Node CONV_2D number 9
+	arm_convolve_1x1_s8_fast(tensor8, 16, 16, 8, 1, (const q7_t*) weight4, 20,
+			0, 0, 1, 1, (int32*) bias4, tensor9, output_shift3,
+			output_multiplier3, -128, -2, -128, 127, 16, 16, sbuf);
+//Node PAD number 10
+//Node DEPTHWISE_CONV_2D number 11
+	arm_depthwise_conv_s8_opt_kernel5_stride1_pad2(tensor10, 16, 16, 20,
+			(const q7_t*) weight5, 20, 5, 5, 0, 0, 1, 1, (int32*) bias5,
+			tensor11, Doutput_shift1, Doutput_multiplier1, 16, 16, -128, 128,
+			-128, 127, 1, 1, sbuf, -128);
+//Node PAD number 12
+//Node CONV_2D number 13
+	arm_convolve_1x1_s8_fast(tensor12, 16, 16, 20, 1, (const q7_t*) weight6, 16,
+			0, 0, 1, 1, (int32*) bias6, tensor13, output_shift4,
+			output_multiplier4, 22, 128, -128, 127, 16, 16, sbuf);
+//Node PAD number 14
+//Node CONV_2D number 15
+	arm_convolve_1x1_s8_fast(tensor14, 16, 16, 16, 1, (const q7_t*) weight7, 36,
+			0, 0, 1, 1, (int32*) bias7, tensor15, output_shift5,
+			output_multiplier5, -128, -22, -128, 127, 16, 16, sbuf);
+//Node PAD number 16
+//Node DEPTHWISE_CONV_2D number 17
+	arm_depthwise_conv_s8_opt_kernel3_stride1_pad1(tensor16, 16, 16, 36,
+			(const q7_t*) weight8, 36, 3, 3, 0, 0, 1, 1, (int32*) bias8,
+			tensor17, Doutput_shift2, Doutput_multiplier2, 16, 16, -128, 128,
+			-128, 127, 1, 1, sbuf, -128);
+//Node PAD number 18
+//Node CONV_2D number 19
+	arm_convolve_1x1_s8_fast(tensor18, 16, 16, 36, 1, (const q7_t*) weight9, 16,
+			0, 0, 1, 1, (int32*) bias9, tensor19, output_shift6,
+			output_multiplier6, -14, 128, -128, 127, 16, 16, sbuf);
+//Node ADD number 20
+	input_shape.Resize(4);
+	ptr = input_shape.DimsData();
+	ptr[0] = 1;
+	ptr[1] = 16;
+	ptr[2] = 16;
+	ptr[3] = 16;
+	output_shape.Resize(4);
+	ptr = output_shape.DimsData();
+	ptr[0] = 1;
+	ptr[1] = 16;
+	ptr[2] = 16;
+	ptr[3] = 16;
+	add_op_params.left_shift = 20;
+	add_op_params.input1_offset = 14;
+	add_op_params.input1_multiplier = 1073741824;
+	add_op_params.input1_shift = 0;
+	add_op_params.input2_offset = -22;
+	add_op_params.input2_multiplier = 1816454051;
+	add_op_params.input2_shift = -1;
+	add_op_params.output_offset = 19;
+	add_op_params.output_multiplier = 1633788013;
+	add_op_params.output_shift = -19;
+	add_op_params.quantized_activation_max = 127;
+	add_op_params.quantized_activation_min = -128;
+	Add(add_op_params, input_shape, tensor20, input_shape, tensor21,
+			output_shape, tensor22);
+//Node PAD number 21
+//Node CONV_2D number 22
+	arm_convolve_1x1_s8_fast(tensor23, 16, 16, 16, 1, (const q7_t*) weight10,
+			32, 0, 0, 1, 1, (int32*) bias10, tensor24, output_shift7,
+			output_multiplier7, -128, -19, -128, 127, 16, 16, sbuf);
+//Node PAD number 23
+//Node DEPTHWISE_CONV_2D number 24
+	arm_depthwise_conv_s8_opt_kernel7_stride2_pad3(tensor25, 16, 16, 32,
+			(const q7_t*) weight11, 32, 7, 7, 0, 0, 2, 2, (int32*) bias11,
+			tensor26, Doutput_shift3, Doutput_multiplier3, 8, 8, -128, 128,
+			-128, 127, 1, 1, sbuf, -128);
+//Node PAD number 25
+//Node CONV_2D number 26
+	arm_convolve_1x1_s8_fast(tensor27, 8, 8, 32, 1, (const q7_t*) weight12, 20,
+			0, 0, 1, 1, (int32*) bias12, tensor28, output_shift8,
+			output_multiplier8, -9, 128, -128, 127, 8, 8, sbuf);
+//Node PAD number 27
+//Node CONV_2D number 28
+	arm_convolve_1x1_s8_fast(tensor29, 8, 8, 20, 1, (const q7_t*) weight13, 40,
+			0, 0, 1, 1, (int32*) bias13, tensor30, output_shift9,
+			output_multiplier9, -128, 9, -128, 127, 8, 8, sbuf);
+//Node PAD number 29
+//Node DEPTHWISE_CONV_2D number 30
+	arm_depthwise_conv_s8_opt_kernel3_stride1_pad1(tensor31, 8, 8, 40,
+			(const q7_t*) weight14, 40, 3, 3, 0, 0, 1, 1, (int32*) bias14,
+			tensor32, Doutput_shift4, Doutput_multiplier4, 8, 8, -128, 128,
+			-128, 127, 1, 1, sbuf, -128);
+//Node PAD number 31
+//Node CONV_2D number 32
+	arm_convolve_1x1_s8_fast(tensor33, 8, 8, 40, 1, (const q7_t*) weight15, 20,
+			0, 0, 1, 1, (int32*) bias15, tensor34, output_shift10,
+			output_multiplier10, -5, 128, -128, 127, 8, 8, sbuf);
+//Node ADD number 33
+	input_shape.Resize(4);
+	ptr = input_shape.DimsData();
+	ptr[0] = 1;
+	ptr[1] = 8;
+	ptr[2] = 8;
+	ptr[3] = 20;
+	output_shape.Resize(4);
+	ptr = output_shape.DimsData();
+	ptr[0] = 1;
+	ptr[1] = 8;
+	ptr[2] = 8;
+	ptr[3] = 20;
+	add_op_params.left_shift = 20;
+	add_op_params.input1_offset = 5;
+	add_op_params.input1_multiplier = 1197894640;
+	add_op_params.input1_shift = -1;
+	add_op_params.input2_offset = 9;
+	add_op_params.input2_multiplier = 1073741824;
+	add_op_params.input2_shift = 0;
+	add_op_params.output_offset = 5;
+	add_op_params.output_multiplier = 1852500440;
+	add_op_params.output_shift = -19;
+	add_op_params.quantized_activation_max = 127;
+	add_op_params.quantized_activation_min = -128;
+	Add(add_op_params, input_shape, tensor35, input_shape, tensor36,
+			output_shape, tensor37);
+//Node PAD number 34
+//Node CONV_2D number 35
+	arm_convolve_1x1_s8_fast(tensor38, 8, 8, 20, 1, (const q7_t*) weight16, 40,
+			0, 0, 1, 1, (int32*) bias16, tensor39, output_shift11,
+			output_multiplier11, -128, -5, -128, 127, 8, 8, sbuf);
+//Node PAD number 36
+//Node DEPTHWISE_CONV_2D number 37
+	arm_depthwise_conv_s8_opt_kernel5_stride1_pad2(tensor40, 8, 8, 40,
+			(const q7_t*) weight17, 40, 5, 5, 0, 0, 1, 1, (int32*) bias17,
+			tensor41, Doutput_shift5, Doutput_multiplier5, 8, 8, -128, 128,
+			-128, 127, 1, 1, sbuf, -128);
+//Node PAD number 38
+//Node CONV_2D number 39
+	arm_convolve_1x1_s8_fast(tensor42, 8, 8, 40, 1, (const q7_t*) weight18, 20,
+			0, 0, 1, 1, (int32*) bias18, tensor43, output_shift12,
+			output_multiplier12, -13, 128, -128, 127, 8, 8, sbuf);
+//Node ADD number 40
+	input_shape.Resize(4);
+	ptr = input_shape.DimsData();
+	ptr[0] = 1;
+	ptr[1] = 8;
+	ptr[2] = 8;
+	ptr[3] = 20;
+	output_shape.Resize(4);
+	ptr = output_shape.DimsData();
+	ptr[0] = 1;
+	ptr[1] = 8;
+	ptr[2] = 8;
+	ptr[3] = 20;
+	add_op_params.left_shift = 20;
+	add_op_params.input1_offset = 13;
+	add_op_params.input1_multiplier = 1127836046;
+	add_op_params.input1_shift = -1;
+	add_op_params.input2_offset = -5;
+	add_op_params.input2_multiplier = 1073741824;
+	add_op_params.input2_shift = 0;
+	add_op_params.output_offset = 3;
+	add_op_params.output_multiplier = 1981576924;
+	add_op_params.output_shift = -19;
+	add_op_params.quantized_activation_max = 127;
+	add_op_params.quantized_activation_min = -128;
+	Add(add_op_params, input_shape, tensor44, input_shape, tensor45,
+			output_shape, tensor46);
+//Node PAD number 41
+//Node CONV_2D number 42
+	arm_convolve_1x1_s8_fast(tensor47, 8, 8, 20, 1, (const q7_t*) weight19, 40,
+			0, 0, 1, 1, (int32*) bias19, tensor48, output_shift13,
+			output_multiplier13, -128, -3, -128, 127, 8, 8, sbuf);
+//Node PAD number 43
+//Node DEPTHWISE_CONV_2D number 44
+	arm_depthwise_conv_s8_opt_kernel5_stride1_pad2(tensor49, 8, 8, 40,
+			(const q7_t*) weight20, 40, 5, 5, 0, 0, 1, 1, (int32*) bias20,
+			tensor50, Doutput_shift6, Doutput_multiplier6, 8, 8, -128, 128,
+			-128, 127, 1, 1, sbuf, -128);
+//Node PAD number 45
+//Node CONV_2D number 46
+	arm_convolve_1x1_s8_fast(tensor51, 8, 8, 40, 1, (const q7_t*) weight21, 20,
+			0, 0, 1, 1, (int32*) bias21, tensor52, output_shift14,
+			output_multiplier14, -3, 128, -128, 127, 8, 8, sbuf);
+//Node ADD number 47
+	input_shape.Resize(4);
+	ptr = input_shape.DimsData();
+	ptr[0] = 1;
+	ptr[1] = 8;
+	ptr[2] = 8;
+	ptr[3] = 20;
+	output_shape.Resize(4);
+	ptr = output_shape.DimsData();
+	ptr[0] = 1;
+	ptr[1] = 8;
+	ptr[2] = 8;
+	ptr[3] = 20;
+	add_op_params.left_shift = 20;
+	add_op_params.input1_offset = 3;
+	add_op_params.input1_multiplier = 2093854869;
+	add_op_params.input1_shift = -2;
+	add_op_params.input2_offset = -3;
+	add_op_params.input2_multiplier = 1073741824;
+	add_op_params.input2_shift = 0;
+	add_op_params.output_offset = -6;
+	add_op_params.output_multiplier = 1960302380;
+	add_op_params.output_shift = -19;
+	add_op_params.quantized_activation_max = 127;
+	add_op_params.quantized_activation_min = -128;
+	Add(add_op_params, input_shape, tensor53, input_shape, tensor54,
+			output_shape, tensor55);
+//Node PAD number 48
+//Node CONV_2D number 49
+	arm_convolve_1x1_s8_fast(tensor56, 8, 8, 20, 1, (const q7_t*) weight22, 80,
+			0, 0, 1, 1, (int32*) bias22, tensor57, output_shift15,
+			output_multiplier15, -128, 6, -128, 127, 8, 8, sbuf);
+//Node PAD number 50
+//Node DEPTHWISE_CONV_2D number 51
+	arm_depthwise_conv_s8_opt_kernel7_stride2_pad3(tensor58, 8, 8, 80,
+			(const q7_t*) weight23, 80, 7, 7, 0, 0, 2, 2, (int32*) bias23,
+			tensor59, Doutput_shift7, Doutput_multiplier7, 4, 4, -128, 128,
+			-128, 127, 1, 1, sbuf, -128);
+//Node PAD number 52
+//Node CONV_2D number 53
+	arm_convolve_1x1_s8_fast(tensor60, 4, 4, 80, 1, (const q7_t*) weight24, 40,
+			0, 0, 1, 1, (int32*) bias24, tensor61, output_shift16,
+			output_multiplier16, -7, 128, -128, 127, 4, 4, sbuf);
+//Node PAD number 54
+//Node CONV_2D number 55
+	arm_convolve_1x1_s8_fast(tensor62, 4, 4, 40, 1, (const q7_t*) weight25, 80,
+			0, 0, 1, 1, (int32*) bias25, tensor63, output_shift17,
+			output_multiplier17, -128, 7, -128, 127, 4, 4, sbuf);
+//Node PAD number 56
+//Node DEPTHWISE_CONV_2D number 57
+	arm_depthwise_conv_s8_opt_kernel5_stride1_pad2(tensor64, 4, 4, 80,
+			(const q7_t*) weight26, 80, 5, 5, 0, 0, 1, 1, (int32*) bias26,
+			tensor65, Doutput_shift8, Doutput_multiplier8, 4, 4, -128, 128,
+			-128, 127, 1, 1, sbuf, -128);
+//Node PAD number 58
+//Node CONV_2D number 59
+	arm_convolve_1x1_s8_fast(tensor66, 4, 4, 80, 1, (const q7_t*) weight27, 40,
+			0, 0, 1, 1, (int32*) bias27, tensor67, output_shift18,
+			output_multiplier18, 7, 128, -128, 127, 4, 4, sbuf);
+//Node ADD number 60
+	input_shape.Resize(4);
+	ptr = input_shape.DimsData();
+	ptr[0] = 1;
+	ptr[1] = 4;
+	ptr[2] = 4;
+	ptr[3] = 40;
+	output_shape.Resize(4);
+	ptr = output_shape.DimsData();
+	ptr[0] = 1;
+	ptr[1] = 4;
+	ptr[2] = 4;
+	ptr[3] = 40;
+	add_op_params.left_shift = 20;
+	add_op_params.input1_offset = -7;
+	add_op_params.input1_multiplier = 1576463381;
+	add_op_params.input1_shift = -1;
+	add_op_params.input2_offset = 7;
+	add_op_params.input2_multiplier = 1073741824;
+	add_op_params.input2_shift = 0;
+	add_op_params.output_offset = -1;
+	add_op_params.output_multiplier = 1832016034;
+	add_op_params.output_shift = -19;
+	add_op_params.quantized_activation_max = 127;
+	add_op_params.quantized_activation_min = -128;
+	Add(add_op_params, input_shape, tensor68, input_shape, tensor69,
+			output_shape, tensor70);
+//Node PAD number 61
+//Node CONV_2D number 62
+	arm_convolve_1x1_s8_fast(tensor71, 4, 4, 40, 1, (const q7_t*) weight28, 80,
+			0, 0, 1, 1, (int32*) bias28, tensor72, output_shift19,
+			output_multiplier19, -128, 1, -128, 127, 4, 4, sbuf);
+//Node PAD number 63
+//Node DEPTHWISE_CONV_2D number 64
+	arm_depthwise_conv_s8_opt_kernel5_stride1_pad2(tensor73, 4, 4, 80,
+			(const q7_t*) weight29, 80, 5, 5, 0, 0, 1, 1, (int32*) bias29,
+			tensor74, Doutput_shift9, Doutput_multiplier9, 4, 4, -128, 128,
+			-128, 127, 1, 1, sbuf, -128);
+//Node PAD number 65
+//Node CONV_2D number 66
+	arm_convolve_1x1_s8_fast(tensor75, 4, 4, 80, 1, (const q7_t*) weight30, 40,
+			0, 0, 1, 1, (int32*) bias30, tensor76, output_shift20,
+			output_multiplier20, -5, 128, -128, 127, 4, 4, sbuf);
+//Node ADD number 67
+	input_shape.Resize(4);
+	ptr = input_shape.DimsData();
+	ptr[0] = 1;
+	ptr[1] = 4;
+	ptr[2] = 4;
+	ptr[3] = 40;
+	output_shape.Resize(4);
+	ptr = output_shape.DimsData();
+	ptr[0] = 1;
+	ptr[1] = 4;
+	ptr[2] = 4;
+	ptr[3] = 40;
+	add_op_params.left_shift = 20;
+	add_op_params.input1_offset = 5;
+	add_op_params.input1_multiplier = 1119667827;
+	add_op_params.input1_shift = -1;
+	add_op_params.input2_offset = 1;
+	add_op_params.input2_multiplier = 1073741824;
+	add_op_params.input2_shift = 0;
+	add_op_params.output_offset = -5;
+	add_op_params.output_multiplier = 1932509985;
+	add_op_params.output_shift = -19;
+	add_op_params.quantized_activation_max = 127;
+	add_op_params.quantized_activation_min = -128;
+	Add(add_op_params, input_shape, tensor77, input_shape, tensor78,
+			output_shape, tensor79);
+//Node PAD number 68
+//Node CONV_2D number 69
+	arm_convolve_1x1_s8_fast(tensor80, 4, 4, 40, 1, (const q7_t*) weight31, 80,
+			0, 0, 1, 1, (int32*) bias31, tensor81, output_shift21,
+			output_multiplier21, -128, 5, -128, 127, 4, 4, sbuf);
+//Node PAD number 70
+//Node DEPTHWISE_CONV_2D number 71
+	arm_depthwise_conv_s8_opt_kernel5_stride1_pad2(tensor82, 4, 4, 80,
+			(const q7_t*) weight32, 80, 5, 5, 0, 0, 1, 1, (int32*) bias32,
+			tensor83, Doutput_shift10, Doutput_multiplier10, 4, 4, -128, 128,
+			-128, 127, 1, 1, sbuf, -128);
+//Node PAD number 72
+//Node CONV_2D number 73
+	arm_convolve_1x1_s8_fast(tensor84, 4, 4, 80, 1, (const q7_t*) weight33, 40,
+			0, 0, 1, 1, (int32*) bias33, tensor85, output_shift22,
+			output_multiplier22, -4, 128, -128, 127, 4, 4, sbuf);
+//Node ADD number 74
+	input_shape.Resize(4);
+	ptr = input_shape.DimsData();
+	ptr[0] = 1;
+	ptr[1] = 4;
+	ptr[2] = 4;
+	ptr[3] = 40;
+	output_shape.Resize(4);
+	ptr = output_shape.DimsData();
+	ptr[0] = 1;
+	ptr[1] = 4;
+	ptr[2] = 4;
+	ptr[3] = 40;
+	add_op_params.left_shift = 20;
+	add_op_params.input1_offset = 4;
+	add_op_params.input1_multiplier = 1310028426;
+	add_op_params.input1_shift = -1;
+	add_op_params.input2_offset = 5;
+	add_op_params.input2_multiplier = 1073741824;
+	add_op_params.input2_shift = 0;
+	add_op_params.output_offset = 6;
+	add_op_params.output_multiplier = 1848454939;
+	add_op_params.output_shift = -19;
+	add_op_params.quantized_activation_max = 127;
+	add_op_params.quantized_activation_min = -128;
+	Add(add_op_params, input_shape, tensor86, input_shape, tensor87,
+			output_shape, tensor88);
+//Node PAD number 75
+//Node CONV_2D number 76
+	arm_convolve_1x1_s8_fast(tensor89, 4, 4, 40, 1, (const q7_t*) weight34, 160,
+			0, 0, 1, 1, (int32*) bias34, tensor90, output_shift23,
+			output_multiplier23, -128, -6, -128, 127, 4, 4, sbuf);
+//Node PAD number 77
+//Node DEPTHWISE_CONV_2D number 78
+	arm_depthwise_conv_s8_opt_kernel5_stride1_pad2(tensor91, 4, 4, 160,
+			(const q7_t*) weight35, 160, 5, 5, 0, 0, 1, 1, (int32*) bias35,
+			tensor92, Doutput_shift11, Doutput_multiplier11, 4, 4, -128, 128,
+			-128, 127, 1, 1, sbuf, -128);
+//Node PAD number 79
+//Node CONV_2D number 80
+	arm_convolve_1x1_s8_fast(tensor93, 4, 4, 160, 1, (const q7_t*) weight36, 48,
+			0, 0, 1, 1, (int32*) bias36, tensor94, output_shift24,
+			output_multiplier24, -15, 128, -128, 127, 4, 4, sbuf);
+//Node PAD number 81
+//Node CONV_2D number 82
+	arm_convolve_1x1_s8_fast(tensor95, 4, 4, 48, 1, (const q7_t*) weight37, 96,
+			0, 0, 1, 1, (int32*) bias37, tensor96, output_shift25,
+			output_multiplier25, -128, 15, -128, 127, 4, 4, sbuf);
+//Node PAD number 83
+//Node DEPTHWISE_CONV_2D number 84
+	arm_depthwise_conv_s8_opt_kernel5_stride1_pad2(tensor97, 4, 4, 96,
+			(const q7_t*) weight38, 96, 5, 5, 0, 0, 1, 1, (int32*) bias38,
+			tensor98, Doutput_shift12, Doutput_multiplier12, 4, 4, -128, 128,
+			-128, 127, 1, 1, sbuf, -128);
+//Node PAD number 85
+//Node CONV_2D number 86
+	arm_convolve_1x1_s8_fast(tensor99, 4, 4, 96, 1, (const q7_t*) weight39, 48,
+			0, 0, 1, 1, (int32*) bias39, tensor100, output_shift26,
+			output_multiplier26, 0, 128, -128, 127, 4, 4, sbuf);
+//Node ADD number 87
+	input_shape.Resize(4);
+	ptr = input_shape.DimsData();
+	ptr[0] = 1;
+	ptr[1] = 4;
+	ptr[2] = 4;
+	ptr[3] = 48;
+	output_shape.Resize(4);
+	ptr = output_shape.DimsData();
+	ptr[0] = 1;
+	ptr[1] = 4;
+	ptr[2] = 4;
+	ptr[3] = 48;
+	add_op_params.left_shift = 20;
+	add_op_params.input1_offset = 0;
+	add_op_params.input1_multiplier = 1210371115;
+	add_op_params.input1_shift = -1;
+	add_op_params.input2_offset = 15;
+	add_op_params.input2_multiplier = 1073741824;
+	add_op_params.input2_shift = 0;
+	add_op_params.output_offset = -16;
+	add_op_params.output_multiplier = 1773258957;
+	add_op_params.output_shift = -19;
+	add_op_params.quantized_activation_max = 127;
+	add_op_params.quantized_activation_min = -128;
+	Add(add_op_params, input_shape, tensor101, input_shape, tensor102,
+			output_shape, tensor103);
+//Node PAD number 88
+//Node CONV_2D number 89
+	arm_convolve_1x1_s8_fast(tensor104, 4, 4, 48, 1, (const q7_t*) weight40, 96,
+			0, 0, 1, 1, (int32*) bias40, tensor105, output_shift27,
+			output_multiplier27, -128, 16, -128, 127, 4, 4, sbuf);
+//Node PAD number 90
+//Node DEPTHWISE_CONV_2D number 91
+	arm_depthwise_conv_s8_opt_kernel5_stride1_pad2(tensor106, 4, 4, 96,
+			(const q7_t*) weight41, 96, 5, 5, 0, 0, 1, 1, (int32*) bias41,
+			tensor107, Doutput_shift13, Doutput_multiplier13, 4, 4, -128, 128,
+			-128, 127, 1, 1, sbuf, -128);
+//Node PAD number 92
+//Node CONV_2D number 93
+	arm_convolve_1x1_s8_fast(tensor108, 4, 4, 96, 1, (const q7_t*) weight42, 48,
+			0, 0, 1, 1, (int32*) bias42, tensor109, output_shift28,
+			output_multiplier28, -40, 128, -128, 127, 4, 4, sbuf);
+//Node ADD number 94
+	input_shape.Resize(4);
+	ptr = input_shape.DimsData();
+	ptr[0] = 1;
+	ptr[1] = 4;
+	ptr[2] = 4;
+	ptr[3] = 48;
+	output_shape.Resize(4);
+	ptr = output_shape.DimsData();
+	ptr[0] = 1;
+	ptr[1] = 4;
+	ptr[2] = 4;
+	ptr[3] = 48;
+	add_op_params.left_shift = 20;
+	add_op_params.input1_offset = 40;
+	add_op_params.input1_multiplier = 1931790756;
+	add_op_params.input1_shift = -1;
+	add_op_params.input2_offset = 16;
+	add_op_params.input2_multiplier = 1073741824;
+	add_op_params.input2_shift = 0;
+	add_op_params.output_offset = -11;
+	add_op_params.output_multiplier = 1673466521;
+	add_op_params.output_shift = -19;
+	add_op_params.quantized_activation_max = 127;
+	add_op_params.quantized_activation_min = -128;
+	Add(add_op_params, input_shape, tensor110, input_shape, tensor111,
+			output_shape, tensor112);
+//Node PAD number 95
+//Node CONV_2D number 96
+	arm_convolve_1x1_s8_fast(tensor113, 4, 4, 48, 1, (const q7_t*) weight43,
+			100, 0, 0, 1, 1, (int32*) bias43, tensor114, output_shift29,
+			output_multiplier29, -128, 11, -128, 127, 4, 4, sbuf);
+//Node PAD number 97
+//Node DEPTHWISE_CONV_2D number 98
+	arm_depthwise_conv_s8_opt_kernel5_stride1_pad2(tensor115, 4, 4, 100,
+			(const q7_t*) weight44, 100, 5, 5, 0, 0, 1, 1, (int32*) bias44,
+			tensor116, Doutput_shift14, Doutput_multiplier14, 4, 4, -128, 128,
+			-128, 127, 1, 1, sbuf, -128);
+//Node PAD number 99
+//Node CONV_2D number 100
+	arm_convolve_1x1_s8_fast(tensor117, 4, 4, 100, 1, (const q7_t*) weight45,
+			48, 0, 0, 1, 1, (int32*) bias45, tensor118, output_shift30,
+			output_multiplier30, 13, 128, -128, 127, 4, 4, sbuf);
+//Node ADD number 101
+	input_shape.Resize(4);
+	ptr = input_shape.DimsData();
+	ptr[0] = 1;
+	ptr[1] = 4;
+	ptr[2] = 4;
+	ptr[3] = 48;
+	output_shape.Resize(4);
+	ptr = output_shape.DimsData();
+	ptr[0] = 1;
+	ptr[1] = 4;
+	ptr[2] = 4;
+	ptr[3] = 48;
+	add_op_params.left_shift = 20;
+	add_op_params.input1_offset = -13;
+	add_op_params.input1_multiplier = 1278112243;
+	add_op_params.input1_shift = -1;
+	add_op_params.input2_offset = 11;
+	add_op_params.input2_multiplier = 1073741824;
+	add_op_params.input2_shift = 0;
+	add_op_params.output_offset = 0;
+	add_op_params.output_multiplier = 1832700353;
+	add_op_params.output_shift = -19;
+	add_op_params.quantized_activation_max = 127;
+	add_op_params.quantized_activation_min = -128;
+	Add(add_op_params, input_shape, tensor119, input_shape, tensor120,
+			output_shape, tensor121);
+//Node PAD number 102
+//Node CONV_2D number 103
+	arm_convolve_1x1_s8_fast(tensor122, 4, 4, 48, 1, (const q7_t*) weight46,
+			200, 0, 0, 1, 1, (int32*) bias46, tensor123, output_shift31,
+			output_multiplier31, -128, 0, -128, 127, 4, 4, sbuf);
+//Node PAD number 104
+//Node DEPTHWISE_CONV_2D number 105
+	arm_depthwise_conv_s8_opt_kernel7_stride2_pad3(tensor124, 4, 4, 200,
+			(const q7_t*) weight47, 200, 7, 7, 0, 0, 2, 2, (int32*) bias47,
+			tensor125, Doutput_shift15, Doutput_multiplier15, 2, 2, -128, 128,
+			-128, 127, 1, 1, sbuf, -128);
+//Node PAD number 106
+//Node CONV_2D number 107
+	arm_convolve_1x1_s8_fast(tensor126, 2, 2, 200, 1, (const q7_t*) weight48,
+			96, 0, 0, 1, 1, (int32*) bias48, tensor127, output_shift32,
+			output_multiplier32, -4, 128, -128, 127, 2, 2, sbuf);
+//Node PAD number 108
+//Node CONV_2D number 109
+	arm_convolve_1x1_s8_fast(tensor128, 2, 2, 96, 1, (const q7_t*) weight49,
+			152, 0, 0, 1, 1, (int32*) bias49, tensor129, output_shift33,
+			output_multiplier33, -128, 4, -128, 127, 2, 2, sbuf);
+//Node PAD number 110
+//Node DEPTHWISE_CONV_2D number 111
+	arm_depthwise_conv_s8_opt_kernel5_stride1_pad2(tensor130, 2, 2, 152,
+			(const q7_t*) weight50, 152, 5, 5, 0, 0, 1, 1, (int32*) bias50,
+			tensor131, Doutput_shift16, Doutput_multiplier16, 2, 2, -128, 128,
+			-128, 127, 1, 1, sbuf, -128);
+//Node PAD number 112
+//Node CONV_2D number 113
+	arm_convolve_1x1_s8_fast(tensor132, 2, 2, 152, 1, (const q7_t*) weight51,
+			96, 0, 0, 1, 1, (int32*) bias51, tensor133, output_shift34,
+			output_multiplier34, -24, 128, -128, 127, 2, 2, sbuf);
+//Node ADD number 114
+	input_shape.Resize(4);
+	ptr = input_shape.DimsData();
+	ptr[0] = 1;
+	ptr[1] = 2;
+	ptr[2] = 2;
+	ptr[3] = 96;
+	output_shape.Resize(4);
+	ptr = output_shape.DimsData();
+	ptr[0] = 1;
+	ptr[1] = 2;
+	ptr[2] = 2;
+	ptr[3] = 96;
+	add_op_params.left_shift = 20;
+	add_op_params.input1_offset = 24;
+	add_op_params.input1_multiplier = 1073741824;
+	add_op_params.input1_shift = 0;
+	add_op_params.input2_offset = 4;
+	add_op_params.input2_multiplier = 2056391962;
+	add_op_params.input2_shift = -1;
+	add_op_params.output_offset = -5;
+	add_op_params.output_multiplier = 1322326422;
+	add_op_params.output_shift = -18;
+	add_op_params.quantized_activation_max = 127;
+	add_op_params.quantized_activation_min = -128;
+	Add(add_op_params, input_shape, tensor134, input_shape, tensor135,
+			output_shape, tensor136);
+//Node PAD number 115
+//Node CONV_2D number 116
+	arm_convolve_1x1_s8_fast(tensor137, 2, 2, 96, 1, (const q7_t*) weight52,
+			640, 0, 0, 1, 1, (int32*) bias52, tensor138, output_shift35,
+			output_multiplier35, 5, 5, -128, 127, 2, 2, sbuf);
+//Node AVERAGE_POOL_2D number 117
+	input_shape.Resize(4);
+	ptr = input_shape.DimsData();
+	ptr[0] = 1;
+	ptr[1] = 2;
+	ptr[2] = 2;
+	ptr[3] = 640;
+	output_shape.Resize(4);
+	ptr = output_shape.DimsData();
+	ptr[0] = 1;
+	ptr[1] = 1;
+	ptr[2] = 1;
+	ptr[3] = 640;
+	pool_op_params.stride_height = 2;
+	pool_op_params.stride_width = 2;
+	pool_op_params.filter_height = 2;
+	pool_op_params.filter_width = 2;
+	pool_op_params.padding_values.height = 0;
+	pool_op_params.padding_values.width = 0;
+	pool_op_params.quantized_activation_min = -128;
+	pool_op_params.quantized_activation_max = 127;
+	AveragePool(pool_op_params, input_shape, tensor139, output_shape,
+			tensor140);
+//Node FULLY_CONNECTED number 118
+	input_shape.Resize(4);
+	ptr = input_shape.DimsData();
+	ptr[0] = 1;
+	ptr[1] = 1;
+	ptr[2] = 1;
+	ptr[3] = 640;
+	output_shape.Resize(2);
+	ptr = output_shape.DimsData();
+	ptr[0] = 1;
+	ptr[1] = 2;
+	ptr[2] = 3;
+	ptr[3] = 0;
+	filter_shape.Resize(2);
+	ptr = filter_shape.DimsData();
+	ptr[0] = 2;
+	ptr[1] = 640;
+	ptr[2] = 0;
+	ptr[3] = 0;
+	bias_shape.Resize(1);
+	ptr = bias_shape.DimsData();
+	ptr[0] = 2;
+	ptr[1] = 0;
+	ptr[2] = 0;
+	ptr[3] = 0;
+	FC_op_params.input_offset = -5;
+	FC_op_params.weights_offset = 0;
+	FC_op_params.output_offset = 0;
+	FC_op_params.output_multiplier = 1935360360;
+	FC_op_params.output_shift = -10;
+	FC_op_params.quantized_activation_min = -128;
+	FC_op_params.quantized_activation_max = 127;
+	FullyConnected(FC_op_params, input_shape, tensor141, filter_shape,
+			(const q7_t*) weight53, bias_shape, (int32*) bias53, output_shape,
+			tensor142);
+//Node SOFTMAX number 119
+	shape.Resize(4);
+	ptr = shape.DimsData();
+	ptr[0] = 1;
+	ptr[1] = 1;
+	ptr[2] = 1;
+	ptr[3] = 2;
+	soft_op_params.input_multiplier = 1387009152;
+	soft_op_params.input_left_shift = 21;
+	soft_op_params.diff_min = -992;
+	Softmax(soft_op_params, shape, tensor143, shape, tensor144);
+}

@@ -1,0 +1,22 @@
+{
+    "configurations": [
+        {
+            "name": "Mac",
+            "includePath": [
+                "${workspaceFolder}/**"
+                "Src/TinyEngine/include/**" ,
+                "Src/TinyEngine/codegen/Include/**" ,
+                "Src/testing_data/**" ,
+                "Src/sys/**" ,
+                "Inc/**" ,
+                "Drivers/**" ,
+            ],
+            "defines": [],
+            "compilerPath": "/usr/bin/clang",
+            "cStandard": "c17",
+            "cppStandard": "c++17",
+            "intelliSenseMode": "macos-clang-arm64"
+        }
+    ],
+    "version": 4
+}
